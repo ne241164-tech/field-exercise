@@ -151,10 +151,28 @@
 
     .actions {
       display: flex;
+      align-items: center;
+      flex-wrap: wrap;
       gap: 10px;
       margin-top: 12px;
       color: #777;
       font-size: 14px;
+    }
+
+    .delete-button {
+      width: auto;
+      margin-top: 0;
+      margin-left: auto;
+      padding: 6px 10px;
+      border: 1px solid #c35a5a;
+      border-radius: 999px;
+      background: white;
+      color: #b34343;
+      font-size: 13px;
+    }
+
+    .delete-button:hover {
+      background: #fff0f0;
     }
 
     .success-box {
@@ -310,10 +328,20 @@
       switchScreen('formScreen');
     }
 
+    function deletePost(index) {
+      const post = posts[index];
+      const ok = confirm(`「${post.found}」の投稿を削除しますか？`);
+      if (!ok) return;
+
+      posts.splice(index, 1);
+      localStorage.setItem('manyoPosts', JSON.stringify(posts));
+      renderFeed();
+    }
+
     function renderFeed() {
       const feedList = document.getElementById('feedList');
       feedList.innerHTML = '';
-      posts.forEach(post => {
+      posts.forEach((post, index) => {
         const card = document.createElement('div');
         card.className = 'feed-card';
         card.innerHTML = `
@@ -330,6 +358,7 @@
               <span>♡ いいね</span>
               <span>💬 コメント</span>
               <span>📍行ってみたい</span>
+              <button class="delete-button" onclick="deletePost(${index})">削除</button>
             </div>
           </div>
         `;
