@@ -210,6 +210,22 @@
       font-size: 14px;
     }
 
+    .like-button {
+      width: auto;
+      margin-top: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #777;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .like-button:hover {
+      color: #4f8056;
+      text-decoration: underline;
+    }
+
     .delete-button {
       width: auto;
       margin-top: 0;
@@ -315,10 +331,12 @@
       addDoc,
       deleteDoc,
       doc,
+      increment,
       onSnapshot,
       orderBy,
       query,
-      serverTimestamp
+      serverTimestamp,
+      updateDoc
     } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -361,6 +379,7 @@
     let posts = defaultPosts;
     let selectedImage = '';
     let hiddenSampleIndexes = JSON.parse(localStorage.getItem('hiddenSampleIndexes') || '[]');
+    let sampleLikes = JSON.parse(localStorage.getItem('sampleLikes') || '{}');
 
     function switchScreen(id) {
       document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
@@ -433,6 +452,7 @@
           comment,
           image: selectedImage || 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=900&auto=format&fit=crop',
           isMine: true,
+          likes: 0,
           createdAt: serverTimestamp()
         });
 
@@ -483,6 +503,31 @@
         closeImageModal();
       }
     });
+
+    async function likePost(index) {
+      const post = posts[index];
+
+      if (!post.id) {
+        const currentLikes = sampleLikes[post.sampleIndex] || 0;
+        sampleLikes[post.sampleIndex] = currentLikes + 1;
+        localStorage.setItem('sampleLikes', JSON.stringify(sampleLikes));
+        posts = posts.map(item => {
+          if (item.sampleIndex !== post.sampleIndex) return item;
+          return { ...item, likes: sampleLikes[post.sampleIndex] };
+        });
+        renderFeed();
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'manyoPosts', post.id), {
+          likes: increment(1)
+        });
+      } catch (error) {
+        console.error(error);
+        alert('いいねに失敗しました。Firestoreの設定を確認してください。');
+      }
+    }
 
     async function deletePost(index) {
       const post = posts[index];
@@ -546,11 +591,14 @@
         <div class="feed-title">${escapeHtml(post.found)}</div>
         <div class="feed-text">${escapeHtml(post.comment)}</div>
         <div class="actions">
-          <span>♡ いいね</span>
+          <button class="like-button" type="button">♡ いいね ${Number(post.likes || 0)}</button>
           <span>💬 コメント</span>
           <span>📍行ってみたい</span>
         </div>
       `;
+
+      const likeButton = body.querySelector('.like-button');
+      likeButton.addEventListener('click', () => likePost(index));
 
       const deleteButton = document.createElement('button');
       deleteButton.className = 'delete-button';
@@ -586,14 +634,14 @@
           ...documentSnapshot.data()
         }));
         const visibleDefaultPosts = defaultPosts
-          .map((post, index) => ({ ...post, sampleIndex: index }))
+          .map((post, index) => ({ ...post, sampleIndex: index, likes: sampleLikes[index] || 0 }))
           .filter(post => !hiddenSampleIndexes.includes(post.sampleIndex));
         posts = [...sharedPosts, ...visibleDefaultPosts];
         renderFeed();
       }, (error) => {
         console.error(error);
         posts = defaultPosts
-          .map((post, index) => ({ ...post, sampleIndex: index }))
+          .map((post, index) => ({ ...post, sampleIndex: index, likes: sampleLikes[index] || 0 }))
           .filter(post => !hiddenSampleIndexes.includes(post.sampleIndex));
         renderFeed();
       });
@@ -607,6 +655,7 @@
     window.showForm = showForm;
     window.openImageModal = openImageModal;
     window.closeImageModal = closeImageModal;
+    window.likePost = likePost;
     window.deletePost = deletePost;
   </script>
 </body>
