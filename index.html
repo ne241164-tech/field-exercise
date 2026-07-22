@@ -360,6 +360,7 @@
 
     let posts = defaultPosts;
     let selectedImage = '';
+    let hiddenSampleIndexes = JSON.parse(localStorage.getItem('hiddenSampleIndexes') || '[]');
 
     function switchScreen(id) {
       document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
@@ -485,13 +486,16 @@
 
     async function deletePost(index) {
       const post = posts[index];
-      if (!post.id) {
-        alert('サンプル投稿は削除できません。');
-        return;
-      }
-
       const ok = confirm(`「${post.found}」の投稿を削除しますか？`);
       if (!ok) return;
+
+      if (!post.id) {
+        hiddenSampleIndexes.push(post.sampleIndex);
+        localStorage.setItem('hiddenSampleIndexes', JSON.stringify(hiddenSampleIndexes));
+        posts = posts.filter(item => item.sampleIndex !== post.sampleIndex);
+        renderFeed();
+        return;
+      }
 
       try {
         await deleteDoc(doc(db, 'manyoPosts', post.id));
@@ -548,14 +552,12 @@
         </div>
       `;
 
-      if (post.id) {
-        const deleteButton = document.createElement('button');
-        deleteButton.className = 'delete-button';
-        deleteButton.type = 'button';
-        deleteButton.textContent = '削除';
-        deleteButton.addEventListener('click', () => deletePost(index));
-        body.querySelector('.actions').appendChild(deleteButton);
-      }
+      const deleteButton = document.createElement('button');
+      deleteButton.className = 'delete-button';
+      deleteButton.type = 'button';
+      deleteButton.textContent = '削除';
+      deleteButton.addEventListener('click', () => deletePost(index));
+      body.querySelector('.actions').appendChild(deleteButton);
 
       card.appendChild(image);
       card.appendChild(body);
@@ -583,11 +585,16 @@
           id: documentSnapshot.id,
           ...documentSnapshot.data()
         }));
-        posts = sharedPosts.length > 0 ? sharedPosts : defaultPosts;
+        const visibleDefaultPosts = defaultPosts
+          .map((post, index) => ({ ...post, sampleIndex: index }))
+          .filter(post => !hiddenSampleIndexes.includes(post.sampleIndex));
+        posts = [...sharedPosts, ...visibleDefaultPosts];
         renderFeed();
       }, (error) => {
         console.error(error);
-        posts = defaultPosts;
+        posts = defaultPosts
+          .map((post, index) => ({ ...post, sampleIndex: index }))
+          .filter(post => !hiddenSampleIndexes.includes(post.sampleIndex));
         renderFeed();
       });
     }
