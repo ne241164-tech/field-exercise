@@ -226,6 +226,11 @@
       background: #fff0f0;
     }
 
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
     .success-box {
       text-align: center;
       padding: 20px 0;
@@ -273,7 +278,7 @@
       <input id="photo" type="file" accept="image/*" onchange="previewPhoto(event)" />
       <img id="preview" class="preview" alt="写真プレビュー" />
 
-      <button onclick="submitPost()">投稿する</button>
+      <button id="submitButton" onclick="submitPost()">投稿する</button>
       <button class="sub-button" onclick="showFeed()">みんなの記録を見る</button>
     </div>
 
@@ -302,7 +307,33 @@
     </div>
   </div>
 
-  <script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      deleteDoc,
+      doc,
+      onSnapshot,
+      orderBy,
+      query,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBfQNAgOn1lQ61xTSPOuqYRfpT0NWfLiq0",
+      authDomain: "field-exercise.firebaseapp.com",
+      projectId: "field-exercise",
+      storageBucket: "field-exercise.firebasestorage.app",
+      messagingSenderId: "1038207440797",
+      appId: "1:1038207440797:web:5bc91ca63303f080540174"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const postsCollection = collection(db, "manyoPosts");
+
     const defaultPosts = [
       {
         nickname: '先に来た人',
@@ -327,7 +358,7 @@
       }
     ];
 
-    let posts = JSON.parse(localStorage.getItem('manyoPosts')) || defaultPosts;
+    let posts = defaultPosts;
     let selectedImage = '';
 
     function switchScreen(id) {
@@ -335,44 +366,90 @@
       document.getElementById(id).classList.add('active');
     }
 
-    function previewPhoto(event) {
+    function resizeImage(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('写真の読み込みに失敗しました。'));
+        reader.onload = () => {
+          const image = new Image();
+          image.onerror = () => reject(new Error('写真の変換に失敗しました。'));
+          image.onload = () => {
+            const maxSize = 900;
+            let width = image.width;
+            let height = image.height;
+
+            if (width > height && width > maxSize) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            } else if (height > maxSize) {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext('2d');
+            context.drawImage(image, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.72));
+          };
+          image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function previewPhoto(event) {
       const file = event.target.files[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        selectedImage = e.target.result;
+
+      try {
+        selectedImage = await resizeImage(file);
         const preview = document.getElementById('preview');
         preview.src = selectedImage;
         preview.style.display = 'block';
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        console.error(error);
+        alert('写真の読み込みに失敗しました。別の写真で試してください。');
+      }
     }
 
-    function submitPost() {
+    async function submitPost() {
+      const submitButton = document.getElementById('submitButton');
       const nickname = document.getElementById('nickname').value || '名無し';
       const category = document.getElementById('category').value;
       const found = document.getElementById('found').value || '名前のない発見';
       const comment = document.getElementById('comment').value || 'コメントなし';
 
-      posts.unshift({
-        nickname,
-        category,
-        found,
-        comment,
-        image: selectedImage || 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=900&auto=format&fit=crop',
-        isMine: true
-      });
+      submitButton.disabled = true;
+      submitButton.textContent = '投稿中...';
 
-      localStorage.setItem('manyoPosts', JSON.stringify(posts));
+      try {
+        await addDoc(postsCollection, {
+          nickname,
+          category,
+          found,
+          comment,
+          image: selectedImage || 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=900&auto=format&fit=crop',
+          isMine: true,
+          createdAt: serverTimestamp()
+        });
 
-      document.getElementById('nickname').value = '';
-      document.getElementById('found').value = '';
-      document.getElementById('comment').value = '';
-      document.getElementById('photo').value = '';
-      document.getElementById('preview').style.display = 'none';
-      selectedImage = '';
+        document.getElementById('nickname').value = '';
+        document.getElementById('found').value = '';
+        document.getElementById('comment').value = '';
+        document.getElementById('photo').value = '';
+        document.getElementById('preview').style.display = 'none';
+        selectedImage = '';
 
-      switchScreen('successScreen');
+        switchScreen('successScreen');
+      } catch (error) {
+        console.error(error);
+        alert('投稿に失敗しました。Firestoreの設定を確認してください。');
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = '投稿する';
+      }
     }
 
     function showFeed() {
@@ -406,43 +483,124 @@
       }
     });
 
-    function deletePost(index) {
+    async function deletePost(index) {
       const post = posts[index];
+      if (!post.id) {
+        alert('サンプル投稿は削除できません。');
+        return;
+      }
+
       const ok = confirm(`「${post.found}」の投稿を削除しますか？`);
       if (!ok) return;
 
-      posts.splice(index, 1);
-      localStorage.setItem('manyoPosts', JSON.stringify(posts));
-      renderFeed();
+      try {
+        await deleteDoc(doc(db, 'manyoPosts', post.id));
+      } catch (error) {
+        console.error(error);
+        alert('削除に失敗しました。');
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function formatDate(post) {
+      if (post.createdAt?.toDate) {
+        return post.createdAt.toDate().toLocaleDateString('ja-JP', {
+          month: 'numeric',
+          day: 'numeric'
+        });
+      }
+      return '今日';
+    }
+
+    function createFeedCard(post, index) {
+      const card = document.createElement('div');
+      card.className = 'feed-card';
+
+      const image = document.createElement('img');
+      image.className = 'feed-img';
+      image.src = post.image;
+      image.alt = '投稿写真';
+      image.title = 'クリックして全体表示';
+      image.addEventListener('click', () => openImageModal(post.image));
+
+      const body = document.createElement('div');
+      body.className = 'feed-body';
+      body.innerHTML = `
+        <div class="feed-meta">
+          <span>@${escapeHtml(post.nickname)}${post.isMine ? '（あなたの投稿）' : ''}</span>
+          <span>${formatDate(post)}</span>
+        </div>
+        <div class="tag">${escapeHtml(post.category)}</div>
+        <div class="feed-title">${escapeHtml(post.found)}</div>
+        <div class="feed-text">${escapeHtml(post.comment)}</div>
+        <div class="actions">
+          <span>♡ いいね</span>
+          <span>💬 コメント</span>
+          <span>📍行ってみたい</span>
+        </div>
+      `;
+
+      if (post.id) {
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'delete-button';
+        deleteButton.type = 'button';
+        deleteButton.textContent = '削除';
+        deleteButton.addEventListener('click', () => deletePost(index));
+        body.querySelector('.actions').appendChild(deleteButton);
+      }
+
+      card.appendChild(image);
+      card.appendChild(body);
+      return card;
     }
 
     function renderFeed() {
       const feedList = document.getElementById('feedList');
       feedList.innerHTML = '';
+
+      if (posts.length === 0) {
+        feedList.innerHTML = '<p class="small-note">まだ投稿はありません。</p>';
+        return;
+      }
+
       posts.forEach((post, index) => {
-        const card = document.createElement('div');
-        card.className = 'feed-card';
-        card.innerHTML = `
-          <img class="feed-img" src="${post.image}" alt="投稿写真" onclick="openImageModal('${post.image}')" title="クリックして全体表示">
-          <div class="feed-body">
-            <div class="feed-meta">
-              <span>@${post.nickname}${post.isMine ? '（あなたの投稿）' : ''}</span>
-              <span>今日</span>
-            </div>
-            <div class="tag">${post.category}</div>
-            <div class="feed-title">${post.found}</div>
-            <div class="feed-text">${post.comment}</div>
-            <div class="actions">
-              <span>♡ いいね</span>
-              <span>💬 コメント</span>
-              <span>📍行ってみたい</span>
-              <button class="delete-button" onclick="deletePost(${index})">削除</button>
-            </div>
-          </div>
-        `;
-        feedList.appendChild(card);
+        feedList.appendChild(createFeedCard(post, index));
       });
     }
+
+    function listenPosts() {
+      const postsQuery = query(postsCollection, orderBy('createdAt', 'desc'));
+      onSnapshot(postsQuery, (snapshot) => {
+        const sharedPosts = snapshot.docs.map(documentSnapshot => ({
+          id: documentSnapshot.id,
+          ...documentSnapshot.data()
+        }));
+        posts = sharedPosts.length > 0 ? sharedPosts : defaultPosts;
+        renderFeed();
+      }, (error) => {
+        console.error(error);
+        posts = defaultPosts;
+        renderFeed();
+      });
+    }
+
+    listenPosts();
+
+    window.previewPhoto = previewPhoto;
+    window.submitPost = submitPost;
+    window.showFeed = showFeed;
+    window.showForm = showForm;
+    window.openImageModal = openImageModal;
+    window.closeImageModal = closeImageModal;
+    window.deletePost = deletePost;
   </script>
 </body>
 </html>
