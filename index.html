@@ -210,7 +210,47 @@
       font-size: 14px;
     }
 
-    .like-button {
+    .comment-area {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eef1ec;
+    }
+
+    .comment-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .comment-item {
+      background: #f7faf6;
+      border-radius: 10px;
+      padding: 8px 10px;
+      color: #555;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .comment-form {
+      display: flex;
+      gap: 8px;
+    }
+
+    .comment-input {
+      margin: 0;
+      min-height: 42px;
+      resize: vertical;
+      font-size: 13px;
+    }
+
+    .comment-submit {
+      width: auto;
+      margin-top: 0;
+      padding: 0 14px;
+      white-space: nowrap;
+    }
+
+    .action-button {
       width: auto;
       margin-top: 0;
       padding: 0;
@@ -221,7 +261,7 @@
       cursor: pointer;
     }
 
-    .like-button:hover {
+    .action-button:hover {
       color: #4f8056;
       text-decoration: underline;
     }
@@ -329,6 +369,7 @@
       getFirestore,
       collection,
       addDoc,
+      arrayUnion,
       deleteDoc,
       doc,
       increment,
@@ -380,6 +421,8 @@
     let selectedImage = '';
     let hiddenSampleIndexes = JSON.parse(localStorage.getItem('hiddenSampleIndexes') || '[]');
     let sampleLikes = JSON.parse(localStorage.getItem('sampleLikes') || '{}');
+    let sampleWants = JSON.parse(localStorage.getItem('sampleWants') || '{}');
+    let sampleComments = JSON.parse(localStorage.getItem('sampleComments') || '{}');
 
     function switchScreen(id) {
       document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
@@ -453,6 +496,8 @@
           image: selectedImage || 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?q=80&w=900&auto=format&fit=crop',
           isMine: true,
           likes: 0,
+          wants: 0,
+          comments: [],
           createdAt: serverTimestamp()
         });
 
@@ -529,6 +574,70 @@
       }
     }
 
+    async function wantPost(index) {
+      const post = posts[index];
+
+      if (!post.id) {
+        const currentWants = sampleWants[post.sampleIndex] || 0;
+        sampleWants[post.sampleIndex] = currentWants + 1;
+        localStorage.setItem('sampleWants', JSON.stringify(sampleWants));
+        posts = posts.map(item => {
+          if (item.sampleIndex !== post.sampleIndex) return item;
+          return { ...item, wants: sampleWants[post.sampleIndex] };
+        });
+        renderFeed();
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'manyoPosts', post.id), {
+          wants: increment(1)
+        });
+      } catch (error) {
+        console.error(error);
+        alert('行ってみたいの登録に失敗しました。Firestoreの設定を確認してください。');
+      }
+    }
+
+    async function addComment(index) {
+      const post = posts[index];
+      const input = document.getElementById(`commentInput-${index}`);
+      const text = input.value.trim();
+      if (!text) return;
+
+      const comment = {
+        nickname: '匿名',
+        text,
+        createdAt: new Date().toISOString()
+      };
+
+      input.disabled = true;
+
+      if (!post.id) {
+        const currentComments = sampleComments[post.sampleIndex] || [];
+        sampleComments[post.sampleIndex] = [...currentComments, comment];
+        localStorage.setItem('sampleComments', JSON.stringify(sampleComments));
+        posts = posts.map(item => {
+          if (item.sampleIndex !== post.sampleIndex) return item;
+          return { ...item, comments: sampleComments[post.sampleIndex] };
+        });
+        renderFeed();
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'manyoPosts', post.id), {
+          comments: arrayUnion(comment)
+        });
+        input.value = '';
+      } catch (error) {
+        console.error(error);
+        alert('コメントの投稿に失敗しました。Firestoreの設定を確認してください。');
+      } finally {
+        input.disabled = false;
+      }
+    }
+
     async function deletePost(index) {
       const post = posts[index];
       const ok = confirm(`「${post.found}」の投稿を削除しますか？`);
@@ -591,14 +700,36 @@
         <div class="feed-title">${escapeHtml(post.found)}</div>
         <div class="feed-text">${escapeHtml(post.comment)}</div>
         <div class="actions">
-          <button class="like-button" type="button">♡ いいね ${Number(post.likes || 0)}</button>
-          <span>💬 コメント</span>
-          <span>📍行ってみたい</span>
+          <button class="action-button like-button" type="button">♡ いいね ${Number(post.likes || 0)}</button>
+          <span>💬 コメント ${Array.isArray(post.comments) ? post.comments.length : 0}</span>
+          <button class="action-button want-button" type="button">📍 行ってみたい ${Number(post.wants || 0)}</button>
+        </div>
+        <div class="comment-area">
+          <div class="comment-list"></div>
+          <div class="comment-form">
+            <textarea id="commentInput-${index}" class="comment-input" placeholder="コメントを書く"></textarea>
+            <button class="comment-submit" type="button">送信</button>
+          </div>
         </div>
       `;
 
       const likeButton = body.querySelector('.like-button');
       likeButton.addEventListener('click', () => likePost(index));
+
+      const wantButton = body.querySelector('.want-button');
+      wantButton.addEventListener('click', () => wantPost(index));
+
+      const commentList = body.querySelector('.comment-list');
+      const comments = Array.isArray(post.comments) ? post.comments : [];
+      comments.forEach(comment => {
+        const commentItem = document.createElement('div');
+        commentItem.className = 'comment-item';
+        commentItem.innerHTML = `<strong>@${escapeHtml(comment.nickname || '匿名')}</strong> ${escapeHtml(comment.text || '')}`;
+        commentList.appendChild(commentItem);
+      });
+
+      const commentSubmit = body.querySelector('.comment-submit');
+      commentSubmit.addEventListener('click', () => addComment(index));
 
       const deleteButton = document.createElement('button');
       deleteButton.className = 'delete-button';
@@ -634,14 +765,26 @@
           ...documentSnapshot.data()
         }));
         const visibleDefaultPosts = defaultPosts
-          .map((post, index) => ({ ...post, sampleIndex: index, likes: sampleLikes[index] || 0 }))
+          .map((post, index) => ({
+            ...post,
+            sampleIndex: index,
+            likes: sampleLikes[index] || 0,
+            wants: sampleWants[index] || 0,
+            comments: sampleComments[index] || []
+          }))
           .filter(post => !hiddenSampleIndexes.includes(post.sampleIndex));
         posts = [...sharedPosts, ...visibleDefaultPosts];
         renderFeed();
       }, (error) => {
         console.error(error);
         posts = defaultPosts
-          .map((post, index) => ({ ...post, sampleIndex: index, likes: sampleLikes[index] || 0 }))
+          .map((post, index) => ({
+            ...post,
+            sampleIndex: index,
+            likes: sampleLikes[index] || 0,
+            wants: sampleWants[index] || 0,
+            comments: sampleComments[index] || []
+          }))
           .filter(post => !hiddenSampleIndexes.includes(post.sampleIndex));
         renderFeed();
       });
@@ -656,6 +799,8 @@
     window.openImageModal = openImageModal;
     window.closeImageModal = closeImageModal;
     window.likePost = likePost;
+    window.wantPost = wantPost;
+    window.addComment = addComment;
     window.deletePost = deletePost;
   </script>
 </body>
