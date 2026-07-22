@@ -584,7 +584,7 @@
       body.className = 'feed-body';
       body.innerHTML = `
         <div class="feed-meta">
-          <span>@${escapeHtml(post.nickname)}${post.isMine ? '（あなたの投稿）' : ''}</span>
+          <span>@${escapeHtml(post.nickname)}</span>
           <span>${formatDate(post)}</span>
         </div>
         <div class="tag">${escapeHtml(post.category)}</div>
