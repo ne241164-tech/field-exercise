@@ -211,9 +211,14 @@
     }
 
     .comment-area {
+      display: none;
       margin-top: 12px;
       padding-top: 12px;
       border-top: 1px solid #eef1ec;
+    }
+
+    .comment-area.active {
+      display: block;
     }
 
     .comment-list {
@@ -232,15 +237,27 @@
     }
 
     .comment-form {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(90px, 0.35fr) minmax(160px, 1fr) auto;
       gap: 8px;
+      align-items: stretch;
+    }
+
+    .comment-name,
+    .comment-input {
+      margin: 0;
+      font-size: 13px;
     }
 
     .comment-input {
-      margin: 0;
       min-height: 42px;
       resize: vertical;
-      font-size: 13px;
+    }
+
+    @media (max-width: 560px) {
+      .comment-form {
+        grid-template-columns: 1fr;
+      }
     }
 
     .comment-submit {
@@ -599,18 +616,26 @@
       }
     }
 
+    function toggleComments(index) {
+      const area = document.getElementById(`commentArea-${index}`);
+      area.classList.toggle('active');
+    }
+
     async function addComment(index) {
       const post = posts[index];
+      const nameInput = document.getElementById(`commentName-${index}`);
       const input = document.getElementById(`commentInput-${index}`);
+      const nickname = nameInput.value.trim() || '匿名';
       const text = input.value.trim();
       if (!text) return;
 
       const comment = {
-        nickname: '匿名',
+        nickname,
         text,
         createdAt: new Date().toISOString()
       };
 
+      nameInput.disabled = true;
       input.disabled = true;
 
       if (!post.id) {
@@ -634,6 +659,7 @@
         console.error(error);
         alert('コメントの投稿に失敗しました。Firestoreの設定を確認してください。');
       } finally {
+        nameInput.disabled = false;
         input.disabled = false;
       }
     }
@@ -701,12 +727,13 @@
         <div class="feed-text">${escapeHtml(post.comment)}</div>
         <div class="actions">
           <button class="action-button like-button" type="button">♡ いいね ${Number(post.likes || 0)}</button>
-          <span>💬 コメント ${Array.isArray(post.comments) ? post.comments.length : 0}</span>
+          <button class="action-button comment-toggle" type="button">💬 コメント ${Array.isArray(post.comments) ? post.comments.length : 0}</button>
           <button class="action-button want-button" type="button">📍 行ってみたい ${Number(post.wants || 0)}</button>
         </div>
-        <div class="comment-area">
+        <div id="commentArea-${index}" class="comment-area">
           <div class="comment-list"></div>
           <div class="comment-form">
+            <input id="commentName-${index}" class="comment-name" type="text" placeholder="名前（任意）">
             <textarea id="commentInput-${index}" class="comment-input" placeholder="コメントを書く"></textarea>
             <button class="comment-submit" type="button">送信</button>
           </div>
@@ -715,6 +742,9 @@
 
       const likeButton = body.querySelector('.like-button');
       likeButton.addEventListener('click', () => likePost(index));
+
+      const commentToggle = body.querySelector('.comment-toggle');
+      commentToggle.addEventListener('click', () => toggleComments(index));
 
       const wantButton = body.querySelector('.want-button');
       wantButton.addEventListener('click', () => wantPost(index));
@@ -800,6 +830,7 @@
     window.closeImageModal = closeImageModal;
     window.likePost = likePost;
     window.wantPost = wantPost;
+    window.toggleComments = toggleComments;
     window.addComment = addComment;
     window.deletePost = deletePost;
   </script>
